@@ -24,6 +24,7 @@ source venv/bin/activate
 
 5. Install dependencies (if applicable)
 pip install pygame
+pip install pillow
 
 6. Run the program
 python main.py
