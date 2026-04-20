@@ -673,6 +673,47 @@ def update_and_draw_enemies(screen, player, z_buffer, dt):
         if enemy.dead and abs(enemy.death_timer - ENEMY_DEATH_DISPLAY) < dt + 0.001:
             player.score += KILL_SCORE
 
+def draw_duck(screen, cx, cy, size):
+    """
+    Draws a little duck using pygame primitives, scaled by `size`.
+    cx, cy = screen centre position of the duck.
+    """
+    s = max(1, size)  # scale factor
+
+    # Body (large white ellipse)
+    body_w = max(4, int(s * 1.8))
+    body_h = max(3, int(s * 1.2))
+    pygame.draw.ellipse(screen, (255, 255, 255),
+                        (cx - body_w, cy - body_h // 2, body_w * 2, body_h))
+
+    # Head (smaller white circle, offset to the right/front)
+    head_r = max(2, int(s * 0.7))
+    head_cx = cx + body_w // 2
+    head_cy = cy - body_h // 2
+    pygame.draw.circle(screen, (255, 255, 255), (head_cx, head_cy), head_r)
+
+    # Bill (small orange rectangle poking out to the right)
+    bill_w = max(2, int(s * 0.7))
+    bill_h = max(1, int(s * 0.35))
+    pygame.draw.rect(screen, (255, 165, 0),
+                     (head_cx + head_r - 1, head_cy - bill_h // 2, bill_w, bill_h))
+
+    # Eye (tiny black dot on the head)
+    eye_x = head_cx + max(1, head_r // 2)
+    eye_y = head_cy - max(1, head_r // 3)
+    pygame.draw.circle(screen, (0, 0, 0), (eye_x, eye_y), max(1, int(s * 0.18)))
+
+    # Wing (a slightly darker ellipse on the body)
+    wing_w = max(2, int(s * 0.9))
+    wing_h = max(1, int(s * 0.5))
+    pygame.draw.ellipse(screen, (200, 200, 210),
+                        (cx - wing_w // 2, cy - wing_h // 2, wing_w, wing_h))
+
+    # Tail (small triangle poking out to the left)
+    tail_tip  = (cx - body_w,     cy)
+    tail_top  = (cx - body_w + 2, cy - max(2, int(s * 0.6)))
+    tail_bot  = (cx - body_w + 2, cy + max(2, int(s * 0.6)))
+    pygame.draw.polygon(screen, (220, 220, 220), [tail_tip, tail_top, tail_bot])
 
 # BULLET RENDERING
 def draw_bullets(screen, player, z_buffer):
@@ -702,8 +743,8 @@ def draw_bullets(screen, player, z_buffer):
 
         size     = max(1, int(HEIGHT / perp_dist * 0.1))
         screen_y = HALF_H + vertical_shift
-        pygame.draw.circle(screen, (255, 220, 50), (screen_x, screen_y), size)
-
+        draw_duck(screen, screen_x, screen_y, size)
+        
 def update_and_draw_enemy_bullets(screen, player, z_buffer):
     #Update enemy bullets, check player collision, then render surviving ones.
     vertical_shift = int(player.pitch * HALF_H)
