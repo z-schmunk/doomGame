@@ -27,15 +27,12 @@ MINIMAP_SCALE   = 4                   # pixels per tile
 MINIMAP_MARGIN  = 10
 
 # Enemy constants
-<<<<<<< Updated upstream
-=======
 ENEMY_HIT_RADIUS    = 0.4            # how close a bullet needs to be to kill
 ENEMY_ATTACK_RANGE  = 12.0           # tiles; beyond this enemies are idle
 ENEMY_DAMAGE        = 5              # HP per hit
 ENEMY_ATTACK_RATE   = 0.6            # seconds between enemy attacks
 ENEMY_DEATH_DISPLAY = 0.7            # seconds the corpse remains visible
 BULLET_SPEED        = 0.18           # world-units per frame
->>>>>>> Stashed changes
 ENEMY_HIT_RADIUS    = 0.4
 ENEMY_ATTACK_RANGE  = 12.0
 ENEMY_DAMAGE        = 10
