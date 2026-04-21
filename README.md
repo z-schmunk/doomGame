@@ -12,7 +12,7 @@ select 3.11.0
 cd path/to/doomgame
 
 3. Create virtual environment
-python -m venv venv
+py -3.11 -m venv venv
 
 4. Activate virtual environment
 
