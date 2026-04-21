@@ -26,4 +26,4 @@ source venv/bin/activate
 pip install pygame
 
 6. Run the program
-python main.py
+python JLKDescent.py
