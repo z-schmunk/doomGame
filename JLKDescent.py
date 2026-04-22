@@ -62,6 +62,9 @@ cure_objects      = []
 exit_object       = None
 secret_door       = None
 secret_code_input = ""
+stephany_timer   = 0.0   # counts down; when 0 on level 15, plays stephany.mp3
+stephany_snd     = None  # loaded once
+STEPHANY_INTERVAL = 10.0  # seconds between plays
 
 settings = {
     "mouse_sens": 0.002,
@@ -841,6 +844,7 @@ class Enemy:
         self.is_duck=is_duck; self.is_boss=is_boss
         self.boss_phase=1; self.boss_health=300 if is_boss else 1
         self.flash_timer=0.0; self.spawn_grace=3.0
+        self._phase_transition=0
         self.duck_timer=0.0; self.was_human=not is_duck and not is_boss
 
 def spawn_enemies(count,duck_count,avoid_x,avoid_y,level):
@@ -865,21 +869,27 @@ class Bullet:
         self.dx=math.cos(angle)*BULLET_SPEED; self.dy=math.sin(angle)*BULLET_SPEED
         self.alive=True
 
-    def update(self,level):
-        self.x+=self.dx; self.y+=self.dy
-        if tile_is_wall(int(self.x),int(self.y)): self.alive=False; return
+    def update(self, level):
+        self.x += self.dx; self.y += self.dy
+        if tile_is_wall(int(self.x), int(self.y)): self.alive = False; return
         for e in enemies:
             if not e.alive: continue
-            if math.hypot(e.x-self.x,e.y-self.y)<ENEMY_HIT_RADIUS:
+            if math.hypot(e.x-self.x, e.y-self.y) < ENEMY_HIT_RADIUS:
                 if e.is_boss:
-                    e.boss_health-=1; e.flash_timer=0.1
-                    if e.boss_health<=200: e.boss_phase=2
-                    if e.boss_health<=100: e.boss_phase=3
-                    if e.boss_health<=0:
-                        e.alive=False; e.dead=True; e.state='dead'; e.death_timer=1.5
+                    e.boss_health -= 1; e.flash_timer = 0.1
+                    if e.boss_health <= 200 and e.boss_phase == 1:
+                        e.boss_phase = 2
+                        e._phase_transition = 2   # flag for main loop to catch
+                    if e.boss_health <= 100 and e.boss_phase == 2:
+                        e.boss_phase = 3
+                        e._phase_transition = 3
+                    if e.boss_health <= 0:
+                        e.alive = False; e.dead = True
+                        e.state = 'dead'; e.death_timer = 1.5
                 else:
-                    e.alive=False; e.dead=True; e.state='dead'; e.death_timer=ENEMY_DEATH_DISPLAY
-                self.alive=False; return
+                    e.alive = False; e.dead = True
+                    e.state = 'dead'; e.death_timer = ENEMY_DEATH_DISPLAY
+                self.alive = False; return
 
 class EnemyBullet:
     def __init__(self,x,y,angle,is_boss=False):
@@ -1637,81 +1647,125 @@ def pause_menu(screen,font_big,font_sm,font_tiny,font_note,clock,player):
 # ═══════════════════════════════════════════════
 # MAIN MENU  (Load Save option when save exists)
 # ═══════════════════════════════════════════════
-def main_menu(screen,font_big,font_med,font_sm,font_tiny,clock):
-    tick=0
+def main_menu(screen,font_big,font_med,font_sm,font_tiny,clock,player=None):
+    tick=0; selected=0
     while True:
+        dt=clock.tick(60)/1000.0; tick+=dt
         has_save=save_exists()
-        options=["New Game","Load Save","Settings","Quit"] if has_save else ["New Game","Settings","Quit"]
-        selected=0
+        options=["New Game","Load Game","Notebook","Quit"]
 
-        running=True
-        while running:
-            dt=clock.tick(60)/1000.0; tick+=dt
-            for event in pygame.event.get():
-                if event.type==pygame.QUIT: pygame.quit(); sys.exit()
-                if event.type==pygame.KEYDOWN:
-                    if event.key in (pygame.K_UP,pygame.K_w): selected=max(0,selected-1)
-                    if event.key in (pygame.K_DOWN,pygame.K_s): selected=min(len(options)-1,selected+1)
-                    if event.key==pygame.K_RETURN: return options[selected].lower().replace(" ","_")
-                if event.type==pygame.MOUSEMOTION:
-                    mx,my=event.pos
-                    for i in range(len(options)):
-                        if HALF_W-120<mx<HALF_W+120 and 300+i*70<my<300+i*70+50: selected=i
-                if event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
-                    mx,my=event.pos
-                    for i,opt in enumerate(options):
-                        if HALF_W-120<mx<HALF_W+120 and 300+i*70<my<300+i*70+50:
-                            return options[i].lower().replace(" ","_")
-            screen.fill((5,3,3))
-            for row in range(0,HEIGHT,4): pygame.draw.line(screen,(0,0,0),(0,row),(WIDTH,row))
-            gc=(int(150+50*math.sin(tick*1.5)),20,20)
-            t1=font_big.render("JLK DESCENT",True,gc); t2=font_med.render("Ohio Northern University",True,(100,80,70))
-            t3=font_tiny.render("'What descends is changed.'",True,(70,55,50))
-            screen.blit(t1,t1.get_rect(center=(HALF_W,120))); screen.blit(t2,t2.get_rect(center=(HALF_W,185)))
-            screen.blit(t3,t3.get_rect(center=(HALF_W,220)))
-            pygame.draw.line(screen,(80,40,40),(80,255),(WIDTH-80,255),1)
-            for i,opt in enumerate(options):
+        for event in pygame.event.get():
+            if event.type==pygame.QUIT: pygame.quit(); sys.exit()
+            if event.type==pygame.KEYDOWN:
+                if event.key in (pygame.K_UP,pygame.K_w): selected=max(0,selected-1)
+                if event.key in (pygame.K_DOWN,pygame.K_s): selected=min(len(options)-1,selected+1)
+                if event.key==pygame.K_RETURN: return options[selected].lower().replace(" ","_")
+            if event.type==pygame.MOUSEMOTION:
+                mx,my=event.pos
+                for i in range(len(options)):
+                    if HALF_W-120<mx<HALF_W+120 and 310+i*70<my<310+i*70+50: selected=i
+            if event.type==pygame.MOUSEBUTTONDOWN and event.button==1:
+                mx,my=event.pos
+                for i in range(len(options)):
+                    if HALF_W-120<mx<HALF_W+120 and 310+i*70<my<310+i*70+50:
+                        selected=i; return options[i].lower().replace(" ","_")
+
+        screen.fill((5,3,3))
+        for row in range(0,HEIGHT,4): pygame.draw.line(screen,(0,0,0),(0,row),(WIDTH,row))
+        gc=(int(150+50*math.sin(tick*1.5)),20,20)
+        t1=font_big.render("JLK DESCENT",True,gc)
+        t2=font_med.render("Ohio Northern University",True,(100,80,70))
+        t3=font_tiny.render("'What descends is changed.'",True,(70,55,50))
+        screen.blit(t1,t1.get_rect(center=(HALF_W,120)))
+        screen.blit(t2,t2.get_rect(center=(HALF_W,185)))
+        screen.blit(t3,t3.get_rect(center=(HALF_W,220)))
+        pygame.draw.line(screen,(80,40,40),(80,255),(WIDTH-80,255),1)
+
+        for i,opt in enumerate(options):
+            # Grey out Load Game if no save exists
+            if opt=="Load Game" and not has_save:
+                col=(70,65,60)
+            else:
                 col=(255,220,80) if i==selected else (160,150,140)
-                surf=font_sm.render(opt,True,col)
-                rect=surf.get_rect(center=(HALF_W,310+i*70))
-                if i==selected:
-                    pygame.draw.rect(screen,(35,25,20),rect.inflate(30,14))
-                    pygame.draw.rect(screen,(100,70,40),rect.inflate(30,14),1)
-                screen.blit(surf,rect)
-            if has_save:
-                data=load_game()
-                if data:
-                    lname=LEVEL_THEMES.get(data.get("level",1),{}).get("name","???")
-                    si=font_tiny.render(f"Save: Level {data.get('level',1)} — {lname}",True,(100,140,100))
-                    screen.blit(si,si.get_rect(center=(HALF_W,HEIGHT-55)))
-            footer=font_tiny.render("ONU — Ada, Ohio — Est. 1871 — Sub-Level Access Restricted",True,(50,40,35))
-            screen.blit(footer,footer.get_rect(center=(HALF_W,HEIGHT-25)))
-            pygame.display.flip()
-            running=False if False else True
-            break
-        return options[selected].lower().replace(" ","_")
+            surf=font_sm.render(opt,True,col)
+            rect=surf.get_rect(center=(HALF_W,310+i*70))
+            if i==selected:
+                pygame.draw.rect(screen,(35,25,20),rect.inflate(30,14))
+                pygame.draw.rect(screen,(100,70,40),rect.inflate(30,14),1)
+            screen.blit(surf,rect)
+
+        # Save info line
+        if has_save:
+            data=load_game()
+            if data:
+                lname=LEVEL_THEMES.get(data.get("level",1),{}).get("name","???")
+                si=font_tiny.render(f"Save: Level {data.get('level',1)} — {lname}",True,(100,140,100))
+                screen.blit(si,si.get_rect(center=(HALF_W,HEIGHT-55)))
+
+        footer=font_tiny.render("ONU — Ada, Ohio — Est. 1871 — Sub-Level Access Restricted",True,(50,40,35))
+        screen.blit(footer,footer.get_rect(center=(HALF_W,HEIGHT-25)))
+        pygame.display.flip()
 
 # ═══════════════════════════════════════════════
 # MUSIC
 # ═══════════════════════════════════════════════
+_overlay_channel = None  # module-level, put this just above the function
+
 def play_music_for_level(level):
-    tracks={1:'assets/sounds/ambient.mp3',2:'assets/sounds/ambient.mp3',
-            3:'assets/sounds/ambient2.mp3',4:'assets/sounds/ambient2.mp3',
-            5:'assets/sounds/ambient3.mp3',6:'assets/sounds/ambient3.mp3',
-            7:'assets/sounds/ambient2.mp3',8:'assets/sounds/ambient4.mp3',
-            9:'assets/sounds/ambient4.mp3',10:'assets/sounds/ambient3.mp3',
-            11:'assets/sounds/ambient5.mp3',12:'assets/sounds/ambient4.mp3',
-            13:'assets/sounds/ambient5.mp3',14:'assets/sounds/ambient5.mp3',
-            15:'assets/sounds/ambient4.mp3',16:'assets/sounds/ambient5.mp3',
-            17:'assets/sounds/ambient3.mp3',18:'assets/sounds/ambient5.mp3',
-            19:'assets/sounds/ambient5.mp3',20:'assets/sounds/boss.mp3'}
-    track=tracks.get(level,'assets/sounds/ambient.mp3')
+    global _overlay_channel
+    LEVEL_MUSIC = {
+        1:  'assets/sounds/ambient.mp3',
+        2:  'assets/sounds/ambient.mp3',
+        3:  'assets/sounds/ambient2.mp3',
+        4:  'assets/sounds/ambient2.mp3',
+        5:  'assets/sounds/ambient3.mp3',
+        6:  'assets/sounds/ambient3.mp3',
+        7:  'assets/sounds/ambient2.mp3',
+        8:  'assets/sounds/ambient4.mp3',
+        9:  'assets/sounds/ambient4.mp3',
+        10: 'assets/sounds/ambient3.mp3',
+        11: 'assets/sounds/ambient5.mp3',
+        12: 'assets/sounds/ambient4.mp3',
+        13: 'assets/sounds/ambient5.mp3',
+        14: 'assets/sounds/ambient5.mp3',
+        15: 'assets/sounds/ambient4.mp3',
+        16: 'assets/sounds/ambient5.mp3',
+        17: 'assets/sounds/ambient3.mp3',
+        18: 'assets/sounds/ambient5.mp3',
+        19: 'assets/sounds/ambient5.mp3',
+        20: 'assets/sounds/boss.mp3',
+    }
+
+    # Stop any overlay channel from previous level
+    if _overlay_channel is not None:
+        _overlay_channel.stop()
+        _overlay_channel = None
+
+    track = LEVEL_MUSIC.get(level, 'sounds/ambient.mp3')
     try:
-        pygame.mixer.music.stop()
+        if pygame.mixer.music.get_busy():
+            pygame.mixer.music.stop()
         pygame.mixer.music.load(track)
-        pygame.mixer.music.set_volume(settings["music_vol"]*settings["master_vol"])
+        vol = settings["music_vol"] * settings["master_vol"]
+        # Dim ambient on level 15
+        if level == 15:
+            vol *= 0.35
+        pygame.mixer.music.set_volume(vol)
         pygame.mixer.music.play(-1)
-    except Exception: pass
+    except Exception as e:
+        print(f"Music load failed for '{track}': {e}")
+
+    # Level 15 overlay: stephany.mp3 with 10s gap between loops + static.mp3
+    if level == 15:
+        try:
+            static_snd = pygame.mixer.Sound('assets/sounds/static.mp3')
+            static_snd.set_volume(0.18 * settings["master_vol"])
+            _overlay_channel = pygame.mixer.find_channel()
+            if _overlay_channel:
+                _overlay_channel.play(static_snd, loops=-1)
+        except Exception as e:
+            print(f"Overlay static load failed: {e}")
+
 
 # ═══════════════════════════════════════════════
 # INTRO
@@ -1778,6 +1832,165 @@ def setup_level(player):
     player.notes_this_level_found=sum(1 for k in theme["notes"] if k in player.notes_read)
     play_music_for_level(level)
 
+def show_phase_transition(screen, font_big, font_sm, font_tiny, clock, phase):
+    filename = f'assets/sounds/boss_phase{phase}.mp3'
+    try:
+        voice = pygame.mixer.Sound(filename)
+        voice.set_volume(settings["master_vol"])
+        old_vol = settings["music_vol"] * settings["master_vol"]
+        pygame.mixer.music.set_volume(old_vol * 0.2)
+        voice.play()
+    except Exception as e:
+        print(f"Phase transition audio failed: {e}")
+        voice = None
+
+    if phase == 2:
+        title     = "PHASE II"
+        title_col = (220, 10, 80)
+        subtitle  = "The organism pushes through."
+    else:
+        title     = "PHASE III"
+        title_col = (255, 0, 120)
+        subtitle  = "She is almost gone."
+
+    start   = pygame.time.get_ticks()
+    letters = 0
+
+    while True:
+        dt      = clock.tick(60) / 1000.0
+        elapsed = (pygame.time.get_ticks() - start) / 1000.0
+        letters = min(len(subtitle), int(elapsed * 22))
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE):
+                    if voice: voice.stop()
+                    pygame.mixer.music.set_volume(
+                        settings["music_vol"] * settings["master_vol"])
+                    return
+
+        # Auto-advance when voice done or 12s fallback
+        voice_done = voice and not pygame.mixer.Channel(0).get_busy() and elapsed > 1.5
+        if voice_done or elapsed > 12.0:
+            if voice: voice.stop()
+            pygame.mixer.music.set_volume(
+                settings["music_vol"] * settings["master_vol"])
+            return
+
+        # Flicker effect
+        flicker = random.randint(0, 18)
+        bg_col  = (max(0, flicker - 10), 0, 0)
+        screen.fill(bg_col)
+
+        # Vignette-style dark border
+        pygame.draw.rect(screen, (10, 0, 0), (0, 0, WIDTH, HEIGHT), 60)
+
+        # Phase title — big, centred, pulsing
+        pulse = int(200 + 55 * math.sin(elapsed * 6))
+        pc    = (min(255, pulse), 0, min(120, pulse // 2)) if phase == 3 else (min(255, pulse), 0, min(80, pulse // 3))
+        t     = font_big.render(title, True, pc)
+        screen.blit(t, t.get_rect(center=(HALF_W, HALF_H - 60)))
+
+        # Typewriter subtitle
+        sub = font_sm.render(subtitle[:letters], True, (200, 160, 160))
+        screen.blit(sub, sub.get_rect(center=(HALF_W, HALF_H + 10)))
+
+        # Static bar across middle for phase 3
+        if phase == 3:
+            for _ in range(4):
+                sy  = random.randint(HALF_H - 40, HALF_H + 40)
+                sw  = random.randint(200, WIDTH)
+                sx  = random.randint(0, WIDTH - sw)
+                alpha_surf = pygame.Surface((sw, 3), pygame.SRCALPHA)
+                alpha_surf.fill((255, 255, 255, random.randint(20, 60)))
+                screen.blit(alpha_surf, (sx, sy))
+
+        hint = font_tiny.render("SPACE — Skip", True, (80, 40, 40))
+        screen.blit(hint, hint.get_rect(center=(HALF_W, HEIGHT - 40)))
+        pygame.display.flip()
+
+def show_preboss_cutscene(screen, font_sm, font_tiny, clock):
+    try:
+        voice = pygame.mixer.Sound('assets/sounds/stephany_boss_intro.mp3')
+        voice.set_volume(settings["master_vol"])
+        pygame.mixer.music.set_volume(0)
+        voice.play()
+    except Exception as e:
+        print(f"Boss intro audio failed: {e}")
+        voice = None
+
+    lines = [
+        "...",
+        "You made it.",
+        " ",
+        "I wondered if anyone would.",
+        "I hoped someone would.",
+        " ",
+        "I need you to understand —",
+        "what I did here, I did for everyone.",
+        "The organism doesn't want to hurt us.",
+        "It never did.",
+        " ",
+        "But I can't... stop it now.",
+        "I can't stop myself.",
+        " ",
+        "If you have the compound — use it.",
+        "If you don't —",
+        "then do what you came here to do.",
+        " ",
+        "I'm sorry.",
+        "I'm still in here.",
+        "Somewhere.",
+    ]
+
+    start  = pygame.time.get_ticks()
+    done   = False
+    scroll = 0
+
+    while True:
+        dt = clock.tick(60) / 1000.0
+        elapsed = (pygame.time.get_ticks() - start) / 1000.0
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE):
+                    done = True
+
+        # Auto-advance after voice finishes (or 18s fallback)
+        if voice and not pygame.mixer.Channel(0).get_busy() and elapsed > 2.0:
+            done = True
+        if elapsed > 18.0:
+            done = True
+
+        if done:
+            if voice: voice.stop()
+            pygame.mixer.music.set_volume(
+                settings["music_vol"] * settings["master_vol"])
+            return
+
+        screen.fill((5, 3, 3))
+        pygame.draw.rect(screen, (20, 10, 10), (60, 60, WIDTH-120, HEIGHT-120))
+        pygame.draw.rect(screen, (120, 20, 20), (60, 60, WIDTH-120, HEIGHT-120), 2)
+
+        header = font_sm.render("— DR. STEPHANY —", True, (180, 40, 40))
+        screen.blit(header, header.get_rect(center=(HALF_W, 90)))
+        pygame.draw.line(screen, (120, 20, 20), (80, 115), (WIDTH-80, 115), 1)
+
+        y = 135
+        visible = min(int(elapsed * 1.8), len(lines))
+        for line in lines[:visible]:
+            surf = font_sm.render(line, True, (210, 180, 170))
+            screen.blit(surf, (90, y))
+            y += 32
+
+        hint = font_tiny.render("SPACE / ENTER — Skip", True, (70, 50, 50))
+        screen.blit(hint, hint.get_rect(center=(HALF_W, HEIGHT-50)))
+        pygame.display.flip()
+
 # ═══════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════
@@ -1817,12 +2030,12 @@ def main():
                 pygame.mouse.set_visible(False); pygame.event.set_grab(True)
                 game_state="playing"
 
-            elif result=="load_save":
+            elif result=="load_game":
                 data=load_game()
                 if data:
                     player=Player()
                     player.level=data.get("level",1)
-                    player.health=data.get("health",100)
+                    player.health=100
                     player.score=data.get("score",0)
                     player.cure_pieces=data.get("cure_pieces",[])
                     player.notes_read=data.get("notes_read",[])
@@ -1836,14 +2049,39 @@ def main():
                 else:
                     show_message(screen,font_sm,[("No save file found.",(255,80,80))],delay_ms=1500)
 
+            elif result=="notebook":
+                nb_player=player if player else type('P',(),{'notes_read':[],'notes_this_level_total':0,'notes_this_level_found':0})()
+                notebook_menu(screen,font_big,font_sm,font_tiny,font_note,clock,nb_player)
+
             elif result=="settings":
                 settings_menu(screen,font_big,font_sm,font_tiny,clock)
             elif result=="quit":
                 pygame.quit(); sys.exit()
 
-        elif game_state=="playing":
-            bullet_timer+=dt
-            if bullet_timer>=0.05: bullet_timer=0.0; bullet_frame=(bullet_frame+1)%20
+        elif game_state == "playing":
+            bullet_timer += dt
+            if bullet_timer >= 0.05:
+                bullet_timer = 0.0
+                bullet_frame = (bullet_frame+1)%20
+
+            # Level 15 Stephany voice loop
+            global stephany_timer, stephany_snd
+            if player and player.level == 15:
+                if stephany_snd is None:
+                    try:
+                        stephany_snd = pygame.mixer.Sound('assets/sounds/stephany.mp3')
+                        stephany_snd.set_volume(0.7 * settings["master_vol"])
+                        stephany_timer = 0.1
+                    except Exception as e:
+                        print(f"Stephany sound load failed: {e}")
+                if stephany_snd and not pygame.mixer.Channel(6).get_busy():
+                    stephany_timer -= dt
+                    if stephany_timer <= 0:
+                        pygame.mixer.Channel(6).play(stephany_snd)
+                        stephany_timer = STEPHANY_INTERVAL
+            else:
+                stephany_snd   = None
+                stephany_timer = 0.0
 
             global secret_code_input
             for event in pygame.event.get():
@@ -1909,7 +2147,19 @@ def main():
             update_and_draw_enemy_bullets(screen,player,z_buf)
             draw_hud(screen,player,font_sm,font_tiny,level)
 
-            # Boss check
+            # Boss phase transition check
+            for e in enemies:
+                if e.is_boss and e.alive and e._phase_transition > 0:
+                    phase_num = e._phase_transition
+                    e._phase_transition = 0
+                    pygame.mouse.set_visible(True)
+                    pygame.event.set_grab(False)
+                    show_phase_transition(screen, font_big, font_sm, font_tiny, clock, phase_num)
+                    pygame.mouse.set_visible(False)
+                    pygame.event.set_grab(True)
+                    pygame.mouse.get_rel()
+
+            # Boss death check
             boss_alive=any(e.is_boss and e.alive for e in enemies)
             boss_dead=any(e.is_boss and e.dead for e in enemies)
             if level==20 and boss_dead and not boss_alive:
@@ -1939,6 +2189,9 @@ def main():
                     pygame.mouse.set_visible(True); pygame.event.set_grab(False)
                     save_screen(screen,font_big,font_sm,font_tiny,clock,player)
                     pygame.mouse.set_visible(False); pygame.event.set_grab(True)
+
+                if player.level==20:
+                    show_preboss_cutscene(screen,font_sm,font_tiny,clock)
 
                 setup_level(player)
 
