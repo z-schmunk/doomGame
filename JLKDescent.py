@@ -44,7 +44,7 @@ KILL_SCORE  = 100
 LEVEL_SCORE = 1000
 
 # SAVE FILE
-SAVE_PATH = "jlk_save.json"
+SAVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jlk_save.json")
 
 # MUSIC EVENT
 MUSIC_END = pygame.USEREVENT + 1
@@ -600,11 +600,14 @@ def save_game(player):
         return False
 
 def load_game():
+    print(f"Looking for save at: {SAVE_PATH}")
     try:
         with open(SAVE_PATH, "r") as f:
             data = json.load(f)
+        print(f"Save loaded successfully.")
         return data
-    except Exception:
+    except Exception as e:
+        print(f"Load failed: {e}")
         return None
 
 def save_exists():
