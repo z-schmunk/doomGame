@@ -1816,6 +1816,77 @@ def show_intro(screen,font_sm,font_tiny,clock):
                 screen.blit(hint,hint.get_rect(center=(HALF_W,HEIGHT-55)))
             pygame.display.flip()
 
+def show_controls_overlay(screen, font_sm, font_tiny, clock):
+    controls = [
+        ("W A S D",        "Move"),
+        ("MOUSE",          "Look / Aim"),
+        ("SPACE / CLICK",  "Shoot"),
+        ("F",              "Interact  (notes, items, exit)"),
+        ("Q / E",          "Look up / Look down"),
+        ("ESC",            "Pause menu"),
+    ]
+    duration = 5.0
+    elapsed  = 0.0
+
+    while elapsed < duration:
+        dt = clock.tick(60) / 1000.0
+        elapsed += dt
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN:
+                return   # any key skips immediately
+
+        # Draw one live game frame underneath first,
+        # then draw the overlay on top
+        alpha    = 255
+        fade_start = duration - 1.2
+        if elapsed > fade_start:
+            frac  = (elapsed - fade_start) / 1.2
+            alpha = max(0, int(255 * (1.0 - frac)))
+
+        # Semi-transparent dark panel
+        panel_w, panel_h = 420, 260
+        panel_x = HALF_W - panel_w // 2
+        panel_y = HALF_H - panel_h // 2
+
+        panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        panel.fill((10, 6, 6, min(210, alpha)))
+        pygame.draw.rect(panel, (100, 70, 40, min(255, alpha)),
+                            (0, 0, panel_w, panel_h), 2)
+        screen.blit(panel, (panel_x, panel_y))
+
+        # Title
+        title_col = (200, 180, 100, alpha)
+        title_surf = font_sm.render("CONTROLS", True, (200, 180, 100))
+        title_surf.set_alpha(alpha)
+        screen.blit(title_surf,
+                    title_surf.get_rect(center=(HALF_W, panel_y + 22)))
+
+        pygame.draw.line(screen,
+                            (80, 55, 30),
+                            (panel_x + 16, panel_y + 40),
+                            (panel_x + panel_w - 16, panel_y + 40), 1)
+
+        # Control rows
+        y = panel_y + 52
+        for key_label, action in controls:
+            key_surf = font_tiny.render(key_label, True, (255, 220, 80))
+            act_surf = font_tiny.render(action,    True, (210, 190, 160))
+            key_surf.set_alpha(alpha)
+            act_surf.set_alpha(alpha)
+            screen.blit(key_surf, (panel_x + 20,        y))
+            screen.blit(act_surf, (panel_x + 175,       y))
+            y += 28
+
+        # Skip hint
+        hint = font_tiny.render("Any key to dismiss", True, (100, 80, 60))
+        hint.set_alpha(alpha)
+        screen.blit(hint, hint.get_rect(center=(HALF_W, panel_y + panel_h - 18)))
+
+        pygame.display.flip()
+
 # ═══════════════════════════════════════════════
 # LEVEL SETUP
 # ═══════════════════════════════════════════════
@@ -2026,12 +2097,20 @@ def main():
         if game_state=="menu":
             result=main_menu(screen,font_big,font_med,font_sm,font_tiny,clock)
 
-            if result=="new_game":
-                show_intro(screen,font_sm,font_tiny,clock)
-                player=Player(); player.level=1
+            if result == "new_game":
+                show_intro(screen, font_sm, font_tiny, clock)
+                player = Player()
+                player.level = 1
                 setup_level(player)
-                pygame.mouse.set_visible(False); pygame.event.set_grab(True)
-                game_state="playing"
+                pygame.mouse.set_visible(False)
+                pygame.event.set_grab(True)
+                game_state = "playing"
+                theme = LEVEL_THEMES.get(player.level, LEVEL_THEMES[1])
+                cast_rays(screen, player, theme["wall"], theme["ceil"], theme["floor"])
+                update_and_draw_enemies(screen, player, [MAX_DEPTH]*WIDTH, 0, player.level)
+                draw_hud(screen, player, font_sm, font_tiny, player.level)
+                show_controls_overlay(screen, font_sm, font_tiny, clock)
+                pygame.mouse.get_rel()
 
             elif result=="load_game":
                 data=load_game()
