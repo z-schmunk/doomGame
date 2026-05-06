@@ -1051,7 +1051,10 @@ def draw_enemy_sprite(screen,cx,cy,size,state,is_duck,is_boss,boss_phase,flash):
         pygame.draw.circle(surf,(0,0,0),(hcx+max(1,hr//2),hcy-max(1,hr//3)),max(1,int(s*0.18)))
         screen.blit(surf,surf.get_rect(center=(int(cx),int(cy)))); return
     if is_boss:
-        col=(255,50,50) if flash else {1:(200,20,20),2:(220,10,80),3:(255,0,120)}.get(boss_phase,(200,20,20))
+        phase_cols = {1:(200,20,20),2:(220,10,80),3:(255,0,120)}
+        base_col   = phase_cols.get(boss_phase,(200,20,20))
+        # Subtle brighten instead of full white flash
+        col = tuple(min(255, c+40) for c in base_col) if flash else base_col        
         bw=max(30,int(size*0.5)); bh=max(50,int(size*0.9)); hr=max(14,int(size*0.22)); lh=max(14,int(size*0.25))
     elif state=='dead':
         col=(50,0,0); bw=max(10,int(size*0.28)); bh=max(18,int(size*0.55)); hr=max(6,int(size*0.12)); lh=max(5,int(size*0.14))
@@ -1071,9 +1074,9 @@ def draw_enemy_sprite(screen,cx,cy,size,state,is_duck,is_boss,boss_phase,flash):
     if is_boss:
         baw=max(40,int(size*0.8)); bax=int(cx-baw//2); bay=int(cy-size//2-14)
         pygame.draw.rect(screen,(60,0,0),(bax,bay,baw,8))
-        pf={1:(200,20,20),2:(220,10,80),3:(255,0,120)}
-        fw=baw if boss_phase==1 else (baw*2//3 if boss_phase==2 else baw//3)
-        pygame.draw.rect(screen,pf.get(boss_phase,(200,20,20)),(bax,bay,fw,8))
+        pf={1:(160,15,15),2:(180,8,60),3:(200,0,90)}
+        fill_w=baw if boss_phase==1 else (baw*2//3 if boss_phase==2 else baw//3)
+        pygame.draw.rect(screen,pf.get(boss_phase,(160,15,15)),(bax,bay,fill_w,8))
 
 # ═══════════════════════════════════════════════
 # ENEMY AI
@@ -1109,8 +1112,11 @@ def update_and_draw_enemies(screen,player,z_buffer,dt,level):
                 enemy.state='attack'; enemy.waypoint=None; enemy.dmg_timer-=dt
                 if enemy.dmg_timer<=0:
                     if enemy.is_boss:
-                        base=math.atan2(player.y-enemy.y,player.x-enemy.x)
-                        for sp in (-0.3,0.0,0.3): enemy_bullets.append(EnemyBullet(enemy.x,enemy.y,base+sp,is_boss=True))
+                        base = math.atan2(player.y-enemy.y, player.x-enemy.x)
+                        # Phase 1: single shot. Phase 2: double. Phase 3: triple.
+                        spreads = {1:[0.0], 2:[-0.25,0.25], 3:[-0.3,0.0,0.3]}
+                        for spread in spreads.get(enemy.boss_phase, [0.0]):
+                            enemy_bullets.append(EnemyBullet(enemy.x,enemy.y,base+spread,is_boss=True))
                     else:
                         ang=math.atan2(player.y-enemy.y,player.x-enemy.x)
                         enemy_bullets.append(EnemyBullet(enemy.x,enemy.y,ang+random.uniform(-0.05,0.05)))
@@ -1204,6 +1210,7 @@ def update_and_draw_enemy_bullets(screen,player,z_buffer):
     ef=FOV*settings["fov_mult"]; eh=ef/2; vs=int(player.pitch*HALF_H)
     for b in list(enemy_bullets): b.update(player)
     enemy_bullets[:]=[b for b in enemy_bullets if b.alive]
+    if len(enemy_bullets)>12: enemy_bullets[:]=enemy_bullets[-12:]
     for b in enemy_bullets:
         dx=b.x-player.x; dy=b.y-player.y; dist=math.hypot(dx,dy)
         if dist<0.1: continue
@@ -1214,7 +1221,9 @@ def update_and_draw_enemy_bullets(screen,player,z_buffer):
         sx=int(HALF_W+math.tan(diff)*(WIDTH/(2*math.tan(eh))))
         if not (0<=sx<WIDTH): continue
         if z_buffer[sx]<pd: continue
-        pygame.draw.circle(screen,(255,80,0),(sx,HALF_H+vs),max(3,int(HEIGHT/pd*0.3)))
+        sz=max(3,int(HEIGHT/pd*0.3))
+        pygame.draw.circle(screen,(160,55,15),(sx,HALF_H+vs),sz)
+        pygame.draw.circle(screen,(210,90,35),(sx,HALF_H+vs),max(1,sz//2))
 
 # ═══════════════════════════════════════════════
 # MINIMAP
@@ -1267,10 +1276,10 @@ def draw_hud(screen,player,font_sm,font_tiny,level):
     screen.blit(font_tiny.render(f"Enemies: {alive}",True,(200,200,200)),(20,94))
     nc=(0,255,120) if player.notes_this_level_found>=player.notes_this_level_total else (200,180,100)
     screen.blit(font_tiny.render(f"Notes: {player.notes_this_level_found}/{player.notes_this_level_total}",True,nc),(20,118))
-    cy_off=146
+    cy_off=152
     for pid,label in [("cure_01","Compound A"),("cure_02","Compound B"),("cure_03","Compound C")]:
-        col=(0,255,120) if pid in player.cure_pieces else (60,60,60)
-        screen.blit(font_tiny.render(f"[{label}]",True,col),(20,cy_off)); cy_off+=22
+        col=(0,255,120) if pid in player.cure_pieces else (50,50,50)
+        screen.blit(font_tiny.render(f"[{label}]",True,col),(20,cy_off)); cy_off+=20
     inter=player.check_interactions()
     if inter:
         kind,obj=inter
@@ -1946,7 +1955,7 @@ def show_phase_transition(screen, font_big, font_sm, font_tiny, clock, phase):
                     return
 
         # Auto-advance when voice done or 12s fallback
-        voice_done = voice and not pygame.mixer.Channel(0).get_busy() and elapsed > 1.5
+        voice_done = voice and not voice.get_num_channels() and elapsed > 1.5
         if voice_done or elapsed > 12.0:
             if voice: voice.stop()
             pygame.mixer.music.set_volume(
